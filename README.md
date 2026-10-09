@@ -6,6 +6,7 @@ A small native Android app for tracking sealed Pokémon card products by UPC.
 
 - Scan UPC-A, UPC-E, EAN-13, and EAN-8 barcodes with the phone camera.
 - Look up a product name from UPCitemdb, stripping common leading Pokémon / TCG branding from scanned product names. Names remain editable, and you can add products manually if lookup has no match.
+- Try up to eight product image URLs from UPCitemdb in order, save the first valid image on the device, and show it beside the inventory item for offline viewing. If no image source works, the product is still added; scanning it again retries the image lookup.
 - Save inventory on the device. Scanning a UPC already in the inventory increments its quantity instead of creating a duplicate.
 - Use `+` and `−` to adjust quantities. Tapping `−` at quantity one asks before removing the item.
 - Export the inventory as a CSV file through Android's save-file picker.

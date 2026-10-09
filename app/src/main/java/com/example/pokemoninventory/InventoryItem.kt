@@ -3,5 +3,6 @@ package com.example.pokemoninventory
 data class InventoryItem(
     val upc: String,
     val name: String,
-    val quantity: Int
+    val quantity: Int,
+    val imageFileName: String? = null
 )

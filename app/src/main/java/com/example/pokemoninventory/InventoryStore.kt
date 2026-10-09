@@ -14,7 +14,14 @@ class InventoryStore(context: Context) {
             val array = JSONArray(json)
             for (i in 0 until array.length()) {
                 val obj = array.getJSONObject(i)
-                result.add(InventoryItem(obj.getString("upc"), obj.getString("name"), obj.getInt("quantity")))
+                result.add(
+                    InventoryItem(
+                        obj.getString("upc"),
+                        obj.getString("name"),
+                        obj.getInt("quantity"),
+                        obj.optString("imageFileName").takeIf { it.isNotBlank() && it != "null" }
+                    )
+                )
             }
         }
         return result
@@ -23,7 +30,12 @@ class InventoryStore(context: Context) {
     fun save(items: List<InventoryItem>) {
         val array = JSONArray()
         items.forEach { item ->
-            array.put(JSONObject().put("upc", item.upc).put("name", item.name).put("quantity", item.quantity))
+            val obj = JSONObject()
+                .put("upc", item.upc)
+                .put("name", item.name)
+                .put("quantity", item.quantity)
+            item.imageFileName?.let { obj.put("imageFileName", it) }
+            array.put(obj)
         }
         prefs.edit().putString("items", array.toString()).apply()
     }
