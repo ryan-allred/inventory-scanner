@@ -37,7 +37,7 @@ class ScannerActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        val root = FrameLayout(this)
+        val root = FrameLayout(this).apply { setBackgroundColor(android.graphics.Color.BLACK) }
         previewView = PreviewView(this).apply { scaleType = PreviewView.ScaleType.FILL_CENTER }
         root.addView(previewView, FrameLayout.LayoutParams(-1, -1))
         root.addView(TextView(this).apply {
@@ -49,10 +49,12 @@ class ScannerActivity : AppCompatActivity() {
             gravity = android.view.Gravity.CENTER
         }, FrameLayout.LayoutParams(-1, -2, android.view.Gravity.TOP))
         setContentView(root)
+        root.applySafeAreaInsets()
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) startCamera()
         else permissionRequest.launch(Manifest.permission.CAMERA)
     }
 
+    @androidx.annotation.OptIn(androidx.camera.core.ExperimentalGetImage::class)
     private fun startCamera() {
         val cameraProviderFuture = ProcessCameraProvider.getInstance(this)
         cameraProviderFuture.addListener({

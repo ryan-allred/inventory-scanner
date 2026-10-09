@@ -28,8 +28,6 @@ Android only accepts an in-place APK update when its application ID and signing 
 
 Keep this keystore unchanged and include it in future project uploads. Replacing it changes the signing certificate and prevents in-place updates. Because the keystore is checked into this repository, it is a development key and should not be reused for a publicly distributed production app. No GitHub Secrets are required for these update builds.
 
-The app currently installed on your device was built with a different signing identity, so uninstall it once and install the debug APK from the next successful GitHub Actions run. Export your inventory to CSV before uninstalling if you want to preserve it across that reinstall. Future debug APKs from this repo can update the new installation in place.
-
 ## Product-name lookup
 
 The app calls the public UPCitemdb trial lookup endpoint. Its catalog may not contain every Pokémon product, and its free endpoint has request limits, so a missing result is added as “Unknown product”; long-press it to enter or correct the name. Lookup requires an internet connection; scanning and managing saved inventory work offline.

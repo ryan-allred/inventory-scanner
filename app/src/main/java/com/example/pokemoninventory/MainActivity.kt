@@ -2,9 +2,12 @@ package com.example.pokemoninventory
 
 import android.app.Activity
 import android.content.Intent
+import android.content.res.ColorStateList
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Color
+import android.graphics.drawable.GradientDrawable
+import android.graphics.drawable.RippleDrawable
 import android.net.Uri
 import android.os.Bundle
 import android.text.InputType
@@ -80,20 +83,28 @@ class MainActivity : AppCompatActivity() {
         }
         actions.addView(actionButton("Scan UPC", true) {
             scanLauncher.launch(Intent(this, ScannerActivity::class.java))
-        }, LinearLayout.LayoutParams(0, dp(48), 1f))
-        actions.addView(Space(this), LinearLayout.LayoutParams(dp(10), 1))
-        actions.addView(actionButton("Add manually", false) { showAddDialog("", "") }, LinearLayout.LayoutParams(0, dp(48), 1f))
+        }, LinearLayout.LayoutParams(-1, dp(64)))
         root.addView(actions)
 
         val toolbar = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(20), dp(8), dp(20), dp(8))
+            setPadding(dp(16), dp(8), dp(16), dp(8))
         }
         summary = TextView(this).apply { textSize = 14f; setTextColor(Color.rgb(76, 92, 99)) }
-        toolbar.addView(summary, LinearLayout.LayoutParams(0, -2, 1f))
-        toolbar.addView(actionButton("Export CSV", false) {
+        toolbar.addView(summary, LinearLayout.LayoutParams(-1, -2))
+        val secondaryActions = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.END
+            setPadding(0, dp(10), 0, 0)
+        }
+        secondaryActions.addView(actionButton("Add manually", false) { showAddDialog("", "") },
+            LinearLayout.LayoutParams(-2, dp(48)))
+        secondaryActions.addView(Space(this), LinearLayout.LayoutParams(dp(10), 1))
+        secondaryActions.addView(actionButton("Export CSV", false) {
             exportLauncher.launch("pokemon-sealed-inventory.csv")
-        }, LinearLayout.LayoutParams(-2, dp(40)))
+        }, LinearLayout.LayoutParams(-2, dp(48)))
+        toolbar.addView(secondaryActions, LinearLayout.LayoutParams(-1, -2))
         root.addView(toolbar)
 
         val scroll = ScrollView(this)
@@ -103,16 +114,46 @@ class MainActivity : AppCompatActivity() {
         }
         scroll.addView(listContainer)
         root.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f))
-        setContentView(root)
+        val safeArea = FrameLayout(this).apply {
+            setBackgroundColor(Color.rgb(20, 42, 54))
+            addView(root, FrameLayout.LayoutParams(-1, -1))
+        }
+        setContentView(safeArea)
+        safeArea.applySafeAreaInsets()
     }
 
     private fun actionButton(label: String, primary: Boolean, onClick: () -> Unit) = Button(this).apply {
         text = label
         isAllCaps = false
-        textSize = 14f
+        textSize = if (primary) 19f else 13f
+        setTypeface(null, android.graphics.Typeface.BOLD)
+        minWidth = 0
+        minimumWidth = 0
+        minHeight = 0
+        minimumHeight = 0
+        setPadding(dp(16), 0, dp(16), 0)
         setTextColor(if (primary) Color.WHITE else Color.rgb(20, 42, 54))
-        backgroundTintList = android.content.res.ColorStateList.valueOf(if (primary) Color.rgb(214, 75, 53) else Color.WHITE)
+        backgroundTintList = null
+        background = buttonBackground(
+            if (primary) Color.rgb(214, 75, 53) else Color.WHITE,
+            if (primary) Color.rgb(180, 57, 38) else Color.rgb(190, 205, 212),
+            if (primary) 0x33FFFFFF else 0x22142A36
+        )
+        elevation = dp(if (primary) 4 else 1).toFloat()
         setOnClickListener { onClick() }
+    }
+
+    private fun buttonBackground(fill: Int, border: Int, ripple: Int): RippleDrawable {
+        val shape = GradientDrawable().apply {
+            setColor(fill)
+            cornerRadius = dp(12).toFloat()
+            setStroke(dp(1), border)
+        }
+        val mask = GradientDrawable().apply {
+            setColor(Color.WHITE)
+            cornerRadius = dp(12).toFloat()
+        }
+        return RippleDrawable(ColorStateList.valueOf(ripple), shape, mask)
     }
 
     private fun render() {
@@ -162,9 +203,8 @@ class MainActivity : AppCompatActivity() {
                 setTextColor(Color.rgb(24, 43, 51))
             }
             val plus = qtyButton("+") { changeQuantity(item.upc, 1) }
-            titleRow.addView(minus, LinearLayout.LayoutParams(dp(38), dp(38)))
-            titleRow.addView(qty, LinearLayout.LayoutParams(dp(42), dp(38)))
-            titleRow.addView(plus, LinearLayout.LayoutParams(dp(38), dp(38)))
+            minus.contentDescription = "Decrease quantity of ${item.name}"
+            plus.contentDescription = "Increase quantity of ${item.name}"
             details.addView(titleRow)
             details.addView(TextView(this).apply {
                 text = "UPC  ${item.upc}"
@@ -172,6 +212,14 @@ class MainActivity : AppCompatActivity() {
                 setTextColor(Color.rgb(103, 119, 126))
                 setPadding(0, dp(6), 0, 0)
             })
+            val quantityRow = LinearLayout(this).apply {
+                gravity = Gravity.END or Gravity.CENTER_VERTICAL
+                setPadding(0, dp(12), 0, 0)
+                addView(minus, LinearLayout.LayoutParams(dp(48), dp(48)))
+                addView(qty, LinearLayout.LayoutParams(dp(42), dp(48)))
+                addView(plus, LinearLayout.LayoutParams(dp(48), dp(48)))
+            }
+            details.addView(quantityRow, LinearLayout.LayoutParams(-1, -2))
             contentRow.addView(details, LinearLayout.LayoutParams(0, -2, 1f))
             card.addView(contentRow)
             card.setOnLongClickListener { showEditDialog(item); true }
@@ -182,13 +230,16 @@ class MainActivity : AppCompatActivity() {
     private fun qtyButton(label: String, onClick: () -> Unit) = Button(this).apply {
         text = label
         textSize = 20f
+        setTypeface(null, android.graphics.Typeface.BOLD)
         minWidth = 0
         minimumWidth = 0
         minHeight = 0
         minimumHeight = 0
         setPadding(0)
         setTextColor(Color.rgb(20, 42, 54))
-        backgroundTintList = android.content.res.ColorStateList.valueOf(Color.rgb(235, 240, 242))
+        backgroundTintList = null
+        background = buttonBackground(Color.rgb(235, 240, 242), Color.rgb(180, 198, 207), 0x22142A36)
+        elevation = dp(2).toFloat()
         setOnClickListener { onClick() }
     }
 
