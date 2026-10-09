@@ -13,7 +13,7 @@ A small native Android app for tracking sealed Pokémon card products by UPC.
 
 ## Build
 
-Open this folder in Android Studio, or build from a machine with Java 17, Android SDK Platform 37, and Gradle 9.3.1:
+Open this folder in Android Studio, or build from a machine with Java 17, Android SDK Platform 36, and Gradle 9.3.1:
 
 ```sh
 gradle :app:assembleDebug

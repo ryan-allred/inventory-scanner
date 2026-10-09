@@ -4,7 +4,7 @@ plugins {
 
 android {
     namespace = "com.example.pokemoninventory"
-    compileSdk = 37
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "com.example.pokemoninventory"
@@ -16,9 +16,9 @@ android {
 }
 
 dependencies {
-    implementation("androidx.core:core-ktx:1.19.0")
+    implementation("androidx.core:core-ktx:1.17.0")
     implementation("androidx.appcompat:appcompat:1.8.0")
-    implementation("androidx.activity:activity-ktx:1.13.0")
+    implementation("androidx.activity:activity-ktx:1.12.4")
     implementation("androidx.camera:camera-camera2:1.6.2")
     implementation("androidx.camera:camera-lifecycle:1.6.2")
     implementation("androidx.camera:camera-view:1.6.2")
