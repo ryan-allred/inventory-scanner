@@ -21,16 +21,17 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.setPadding
 import java.io.File
 import java.io.OutputStreamWriter
-import java.util.concurrent.Executors
 
 class MainActivity : AppCompatActivity() {
-    private val store by lazy { InventoryStore(this) }
+    private val repository by lazy { InventoryRepository.get(this) }
     private val items = mutableListOf<InventoryItem>()
     private lateinit var listContainer: LinearLayout
     private lateinit var summary: TextView
-    private val io = Executors.newSingleThreadExecutor()
-    private val imageIo = Executors.newFixedThreadPool(2)
-    private val pendingImageLookups = mutableSetOf<String>()
+    private val inventoryListener: (List<InventoryItem>) -> Unit = { snapshot ->
+        items.clear()
+        items.addAll(snapshot)
+        render()
+    }
     private val imageCache = object : LruCache<String, Bitmap>(8 * 1024) {
         override fun sizeOf(key: String, value: Bitmap) = maxOf(1, value.byteCount / 1024)
     }
@@ -48,7 +49,6 @@ class MainActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        items.addAll(store.load())
         buildUi()
         render()
     }
@@ -195,14 +195,14 @@ class MainActivity : AppCompatActivity() {
                 setTypeface(null, android.graphics.Typeface.BOLD)
             }
             titleRow.addView(name, LinearLayout.LayoutParams(0, -2, 1f))
-            val minus = qtyButton("−") { changeQuantity(item.upc, -1) }
+            val minus = qtyButton("−") { changeQuantity(item.id, -1) }
             val qty = TextView(this).apply {
                 text = item.quantity.toString()
                 textSize = 17f
                 gravity = Gravity.CENTER
                 setTextColor(Color.rgb(24, 43, 51))
             }
-            val plus = qtyButton("+") { changeQuantity(item.upc, 1) }
+            val plus = qtyButton("+") { changeQuantity(item.id, 1) }
             minus.contentDescription = "Decrease quantity of ${item.name}"
             plus.contentDescription = "Increase quantity of ${item.name}"
             details.addView(titleRow)
@@ -220,6 +220,14 @@ class MainActivity : AppCompatActivity() {
                 addView(plus, LinearLayout.LayoutParams(dp(48), dp(48)))
             }
             details.addView(quantityRow, LinearLayout.LayoutParams(-1, -2))
+            item.status?.let { status ->
+                details.addView(TextView(this).apply {
+                    text = status
+                    textSize = 12f
+                    setTextColor(Color.rgb(103, 119, 126))
+                    setPadding(0, dp(8), 0, 0)
+                })
+            }
             contentRow.addView(details, LinearLayout.LayoutParams(0, -2, 1f))
             card.addView(contentRow)
             card.setOnLongClickListener { showEditDialog(item); true }
@@ -244,81 +252,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun onScanned(upc: String) {
-        val existing = items.firstOrNull { it.upc == upc }
-        if (existing != null) {
-            val cleanedName = ProductLookup.cleanTitle(existing.name)
-            if (cleanedName != existing.name) {
-                val index = items.indexOfFirst { it.upc == upc }
-                if (index >= 0) items[index] = existing.copy(name = cleanedName)
-            }
-            changeQuantity(upc, 1)
-            Toast.makeText(this, "Added to existing ${cleanedName}", Toast.LENGTH_SHORT).show()
-            if (!hasProductImage(existing)) fetchImageForExisting(upc)
-            return
-        }
-        Toast.makeText(this, "Looking up product…", Toast.LENGTH_SHORT).show()
-        io.execute {
-            val product = ProductLookup.lookup(upc)
-            val name = product?.title.orEmpty().trim().ifBlank { "Unknown product" }
-            runOnUiThread {
-                val existingAfterLookup = items.firstOrNull { it.upc == upc }
-                if (existingAfterLookup != null) {
-                    changeQuantity(upc, 1)
-                    if (!hasProductImage(existingAfterLookup) && product != null && product.imageUrls.isNotEmpty()) {
-                        fetchImageForExisting(upc, product.imageUrls)
-                    }
-                } else {
-                    items.add(InventoryItem(upc, name, 1))
-                    persistAndRender()
-                    val message = if (name == "Unknown product") {
-                        "Added scanned UPC. Long-press to add the product name."
-                    } else {
-                        "Added $name"
-                    }
-                    Toast.makeText(this, message, Toast.LENGTH_SHORT).show()
-                    if (product != null && product.imageUrls.isNotEmpty()) {
-                        fetchImageForExisting(upc, product.imageUrls)
-                    }
-                }
-            }
-        }
-    }
-
-    private fun fetchImageForExisting(upc: String, knownImageUrls: List<String>? = null) {
-        if (!pendingImageLookups.add(upc)) return
-        imageIo.execute {
-            val imageUrls = knownImageUrls ?: ProductLookup.lookup(upc)?.imageUrls.orEmpty()
-            val imageFileName = ProductLookup.downloadFirstValidImage(imageUrls)
-                ?.let { saveProductImage(upc, it) }
-            runOnUiThread {
-                pendingImageLookups.remove(upc)
-                val index = items.indexOfFirst { it.upc == upc }
-                if (imageFileName != null) {
-                    if (index >= 0) {
-                        val existingImage = items[index].imageFileName
-                        if (existingImage == null || existingImage == imageFileName || !File(filesDir, existingImage).isFile) {
-                            items[index] = items[index].copy(imageFileName = imageFileName)
-                            persistAndRender()
-                        } else if (imageFileName != existingImage) {
-                            deleteProductImage(imageFileName)
-                        }
-                    } else {
-                        deleteProductImage(imageFileName)
-                    }
-                }
-            }
-        }
-    }
-
-    private fun saveProductImage(upc: String, bytes: ByteArray): String? {
-        val digits = upc.filter(Char::isDigit)
-        if (digits.isBlank()) return null
-        return runCatching {
-            val directory = File(filesDir, "product-images").apply { mkdirs() }
-            val fileName = "product_$digits.png"
-            File(directory, fileName).writeBytes(bytes)
-            "product-images/$fileName"
-        }.getOrNull()
+        repository.scan(upc)
     }
 
     private fun loadProductThumbnail(fileName: String): Bitmap? {
@@ -336,15 +270,6 @@ class MainActivity : AppCompatActivity() {
         ) ?: return null
         imageCache.put(fileName, bitmap)
         return bitmap
-    }
-
-    private fun hasProductImage(item: InventoryItem) =
-        item.imageFileName?.let { File(filesDir, it).isFile } == true
-
-    private fun deleteProductImage(fileName: String?) {
-        if (fileName == null) return
-        imageCache.remove(fileName)?.recycle()
-        File(filesDir, fileName).delete()
     }
 
     private fun showAddDialog(upc: String, suggestedName: String) {
@@ -371,14 +296,7 @@ class MainActivity : AppCompatActivity() {
             .setPositiveButton("Add") { _, _ ->
                 val finalUpc = upcField.text.toString().trim()
                 val finalName = nameField.text.toString().trim().ifBlank { "Unknown product" }
-                val existing = items.indexOfFirst { it.upc == finalUpc && finalUpc.isNotBlank() }
-                if (existing >= 0) {
-                    val old = items[existing]
-                    items[existing] = old.copy(quantity = old.quantity + 1, name = finalName.ifBlank { old.name })
-                } else {
-                    items.add(InventoryItem(finalUpc.ifBlank { "NO UPC" }, finalName, 1))
-                }
-                persistAndRender()
+                repository.addManual(finalUpc, finalName)
             }.show()
     }
 
@@ -386,38 +304,32 @@ class MainActivity : AppCompatActivity() {
         val field = EditText(this).apply { setText(item.name); inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_SENTENCES }
         AlertDialog.Builder(this).setTitle("Edit product name")
             .setView(field)
+            .setItems(if (item.upc.all(Char::isDigit)) arrayOf("Retry product details / image") else emptyArray()) { _, _ ->
+                repository.retry(item.id)
+            }
             .setNegativeButton("Cancel", null)
             .setNeutralButton("Remove") { _, _ ->
-                items.removeAll { it.upc == item.upc }
-                deleteProductImage(item.imageFileName)
-                persistAndRender()
+                repository.remove(item.id)
             }
             .setPositiveButton("Save") { _, _ ->
-                val index = items.indexOfFirst { it.upc == item.upc }
-                if (index >= 0) items[index] = items[index].copy(name = field.text.toString().trim().ifBlank { item.name })
-                persistAndRender()
+                repository.editName(item.id, field.text.toString())
             }.show()
     }
 
-    private fun changeQuantity(upc: String, delta: Int) {
-        val index = items.indexOfFirst { it.upc == upc }
+    private fun changeQuantity(id: String, delta: Int) {
+        val index = items.indexOfFirst { it.id == id }
         if (index < 0) return
         val item = items[index]
         if (delta < 0 && item.quantity == 1) {
             AlertDialog.Builder(this).setMessage("Remove ${item.name} from your inventory?")
                 .setNegativeButton("Keep", null)
                 .setPositiveButton("Remove") { _, _ ->
-                    items.removeAt(index)
-                    deleteProductImage(item.imageFileName)
-                    persistAndRender()
+                    repository.remove(item.id)
                 }.show()
         } else {
-            items[index] = item.copy(quantity = item.quantity + delta)
-            persistAndRender()
+            repository.changeQuantity(item.id, delta)
         }
     }
-
-    private fun persistAndRender() { store.save(items); render() }
 
     private fun exportCsv(uri: Uri) {
         try {
@@ -438,9 +350,13 @@ class MainActivity : AppCompatActivity() {
     private fun csv(value: String) = "\"${value.replace("\"", "\"\"")}\""
     private fun dp(value: Int) = (value * resources.displayMetrics.density).toInt()
 
-    override fun onDestroy() {
-        io.shutdown()
-        imageIo.shutdown()
-        super.onDestroy()
+    override fun onStart() {
+        super.onStart()
+        repository.observe(inventoryListener)
+    }
+
+    override fun onStop() {
+        repository.stopObserving(inventoryListener)
+        super.onStop()
     }
 }

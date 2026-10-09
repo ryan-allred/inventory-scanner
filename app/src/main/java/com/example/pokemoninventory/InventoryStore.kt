@@ -2,8 +2,8 @@ package com.example.pokemoninventory
 
 import android.content.Context
 import org.json.JSONArray
-import org.json.JSONObject
 
+// Read-only importer for installations that used SharedPreferences before Room.
 class InventoryStore(context: Context) {
     private val prefs = context.getSharedPreferences("inventory", Context.MODE_PRIVATE)
 
@@ -27,16 +27,4 @@ class InventoryStore(context: Context) {
         return result
     }
 
-    fun save(items: List<InventoryItem>) {
-        val array = JSONArray()
-        items.forEach { item ->
-            val obj = JSONObject()
-                .put("upc", item.upc)
-                .put("name", item.name)
-                .put("quantity", item.quantity)
-            item.imageFileName?.let { obj.put("imageFileName", it) }
-            array.put(obj)
-        }
-        prefs.edit().putString("items", array.toString()).apply()
-    }
 }

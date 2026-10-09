@@ -8,10 +8,19 @@ import java.net.HttpURLConnection
 import java.net.URL
 import java.net.URLEncoder
 import java.text.Normalizer
+import java.text.SimpleDateFormat
+import java.util.Locale
+import java.util.TimeZone
 
 data class ProductLookupResult(
     val title: String?,
     val imageUrls: List<String>
+)
+
+internal data class LookupBatchResult(
+    val products: Map<String, ProductLookupResult?>? = null,
+    val retryAfter: Long = 0,
+    val permanentFailure: Boolean = false
 )
 
 object ProductLookup {
@@ -28,18 +37,44 @@ object ProductLookup {
         RegexOption.IGNORE_CASE
     )
 
-    fun lookup(upc: String): ProductLookupResult? {
+    internal fun lookupBatch(upcs: List<String>): LookupBatchResult {
+        require(upcs.size in 1..2 && upcs.distinct().size == upcs.size)
         var connection: HttpURLConnection? = null
         return try {
-            val encoded = URLEncoder.encode(upc, "UTF-8")
+            val encoded = URLEncoder.encode(upcs.joinToString(","), "UTF-8")
             connection = URL("https://api.upcitemdb.com/prod/trial/lookup?upc=$encoded").openConnection() as HttpURLConnection
             connection.connectTimeout = 5000
             connection.readTimeout = 5000
             connection.requestMethod = "GET"
-            if (connection.responseCode !in 200..299) return null
+            connection.instanceFollowRedirects = false
+            val status = connection.responseCode
+            val now = System.currentTimeMillis()
+            val cooldown = serverCooldown(connection, now, status)
+            if (status !in 200..299) return LookupBatchResult(
+                retryAfter = cooldown,
+                permanentFailure = status in 400..499 && status !in listOf(408, 429)
+            )
             val body = connection.inputStream.bufferedReader().use { it.readText() }
-            val items = JSONObject(body).optJSONArray("items") ?: return null
-            val item = items.optJSONObject(0) ?: return null
+            runCatching { LookupBatchResult(parseBatch(upcs, body), cooldown) }
+                .getOrElse { LookupBatchResult(retryAfter = cooldown) }
+        } catch (_: Exception) {
+            LookupBatchResult()
+        } finally {
+            connection?.disconnect()
+        }
+    }
+
+    internal fun parseBatch(upcs: List<String>, body: String): Map<String, ProductLookupResult?> {
+        val json = JSONObject(body)
+        require(json.optString("code") == "OK") { "Lookup did not succeed" }
+        val items = requireNotNull(json.optJSONArray("items")) { "Missing lookup results" }
+        val results = upcs.associateWith { null as ProductLookupResult? }.toMutableMap()
+        for (index in 0 until items.length()) {
+            val item = items.getJSONObject(index)
+            val identifiers = listOf("upc", "ean", "gtin").map { item.optString(it) }
+                .filter { it.isNotBlank() && it != "null" }.map(LookupPolicy::barcodeKey)
+            val matching = upcs.filter { LookupPolicy.barcodeKey(it) in identifiers }
+            require(matching.isNotEmpty()) { "Unrecognized barcode in lookup response" }
             val title = item.optString("title")
                 .takeIf { it.isNotBlank() && it != "null" }
                 ?.let(::cleanTitle)
@@ -48,12 +83,27 @@ object ProductLookup {
                 (0 until imageArray.length()).map { imageArray.optString(it).trim() }
                     .filter { it.isNotBlank() && it != "null" }
             }
-            ProductLookupResult(title, imageUrls)
-        } catch (_: Exception) {
-            null
-        } finally {
-            connection?.disconnect()
+            matching.forEach { results[it] = ProductLookupResult(title, imageUrls) }
         }
+        return results
+    }
+
+    private fun serverCooldown(connection: HttpURLConnection, now: Long, status: Int): Long {
+        val retry = connection.getHeaderField("Retry-After")
+        val retryAt = retry?.toLongOrNull()?.coerceAtLeast(0)?.let { now + it * 1000 }
+            ?: retry?.let {
+                runCatching {
+                    SimpleDateFormat("EEE, dd MMM yyyy HH:mm:ss zzz", Locale.US).apply {
+                        timeZone = TimeZone.getTimeZone("GMT")
+                    }.parse(it)?.time
+                }.getOrNull()
+            } ?: 0
+        val exhausted = connection.getHeaderField("X-RateLimit-Remaining")?.toLongOrNull() == 0L
+        val resetAt = if (exhausted || status == 429) {
+            connection.getHeaderField("X-RateLimit-Reset")?.toLongOrNull()?.times(1000) ?: 0
+        } else 0
+        return maxOf(retryAt, resetAt,
+            if (status == 429 && retryAt <= now && resetAt <= now) now + 60_000 else 0)
     }
 
     fun downloadFirstValidImage(imageUrls: List<String>): ByteArray? {

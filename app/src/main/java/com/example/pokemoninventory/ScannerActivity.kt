@@ -73,7 +73,10 @@ class ScannerActivity : AppCompatActivity() {
                 val image = InputImage.fromMediaImage(mediaImage, proxy.imageInfo.rotationDegrees)
                 scanner.process(image)
                     .addOnSuccessListener { barcodes ->
-                        val code = barcodes.firstNotNullOfOrNull { it.rawValue }
+                        val barcode = barcodes.firstOrNull { !it.rawValue.isNullOrBlank() }
+                        val code = barcode?.rawValue?.let {
+                            if (barcode.format == Barcode.FORMAT_UPC_E) LookupPolicy.expandUpce(it) else it
+                        }
                         if (!code.isNullOrBlank() && delivered.compareAndSet(false, true)) {
                             setResult(Activity.RESULT_OK, Intent().putExtra(EXTRA_UPC, code))
                             finish()
