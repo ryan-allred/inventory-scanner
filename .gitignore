@@ -6,3 +6,6 @@ local.properties
 *.iml
 *.apk
 *.aab
+*.jks
+*.keystore
+!app/signing/pokemoninventory-dev.jks

@@ -6,12 +6,32 @@ android {
     namespace = "com.example.pokemoninventory"
     compileSdk = 36
 
+    val ciVersionCode = System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: 1
+
+    signingConfigs {
+        create("devUpdate") {
+            storeFile = file("signing/pokemoninventory-dev.jks")
+            storePassword = "pokemoninventory-dev"
+            keyAlias = "pokemoninventory-dev"
+            keyPassword = "pokemoninventory-dev"
+        }
+    }
+
     defaultConfig {
         applicationId = "com.example.pokemoninventory"
         minSdk = 23
         targetSdk = 35
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = ciVersionCode
+        versionName = "1.0.$ciVersionCode"
+    }
+
+    buildTypes {
+        getByName("debug") {
+            signingConfig = signingConfigs.getByName("devUpdate")
+        }
+        getByName("release") {
+            signingConfig = signingConfigs.getByName("devUpdate")
+        }
     }
 }
 

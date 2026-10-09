@@ -180,9 +180,21 @@ class MainActivity : AppCompatActivity() {
         }
         Toast.makeText(this, "Looking up product…", Toast.LENGTH_SHORT).show()
         io.execute {
-            val name = ProductLookup.lookup(upc).orEmpty()
+            val name = ProductLookup.lookup(upc).orEmpty().trim().ifBlank { "Unknown product" }
             runOnUiThread {
-                if (items.any { it.upc == upc }) changeQuantity(upc, 1) else showAddDialog(upc, name)
+                val existingAfterLookup = items.firstOrNull { it.upc == upc }
+                if (existingAfterLookup != null) {
+                    changeQuantity(upc, 1)
+                } else {
+                    items.add(InventoryItem(upc, name, 1))
+                    persistAndRender()
+                    val message = if (name == "Unknown product") {
+                        "Added scanned UPC. Long-press to add the product name."
+                    } else {
+                        "Added $name"
+                    }
+                    Toast.makeText(this, message, Toast.LENGTH_SHORT).show()
+                }
             }
         }
     }
@@ -204,7 +216,7 @@ class MainActivity : AppCompatActivity() {
             addView(nameField)
             addView(upcField)
         }
-        AlertDialog.Builder(this).setTitle(if (upc.isBlank()) "Add product" else "Confirm product")
+        AlertDialog.Builder(this).setTitle("Add product")
             .setMessage(if (suggestedName.isBlank() && upc.isNotBlank()) "No product name was found. Enter one below." else null)
             .setView(content)
             .setNegativeButton("Cancel", null)
